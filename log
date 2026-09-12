@@ -1,0 +1,265 @@
+repeat task.wait() until game:IsLoaded()
+
+local _1 = "https://script.google.com/macros/s/AKfycbywTxWi8Suqt2qYlIlCkhPXZLWJfHP6RWN27p2cC2IjKl1rCq2hJhCEMpdAIMEbSDmUmg/exec"
+local _2 = "bot-send"
+local _3 = game:GetService("HttpService")
+local _4 = game:GetService("TeleportService")
+local _5 = game:GetService("Players")
+local _6 = game:GetService("Stats")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local _8 = _5.LocalPlayer
+local _9 = (syn and syn.request) or (http and http.request) or http_request or (fluxus and fluxus.request) or request
+
+print("⏳ [System] โหลดเกมเสร็จสิ้น กำลังเตรียมฟังก์ชัน...")
+
+-- ==========================================
+-- ระบบดักจับกระเป๋าแบบเดียวกับ Open Case
+-- ==========================================
+local cachedInventory = nil
+pcall(function()
+    local sendRemote = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("Send")
+    sendRemote.OnClientEvent:Connect(function(action, dataType, data)
+        if action == "data" and dataType == "items" and type(data) == "table" then
+            cachedInventory = data
+            print("🎒 [System] ดักจับข้อมูลกระเป๋าจากเซิร์ฟเวอร์สำเร็จ!")
+        end
+    end)
+end)
+
+local function _B()
+    local d = 0
+    pcall(function() d = math.floor(_6.Network.ServerStatsItem["Data Ping"]:GetValue()) end)
+    return d
+end
+
+local function _C(e)
+    if not e then return "0" end
+    local f = tostring(e):gsub("%D", "")
+    return f ~= "" and f or "0"
+end
+
+local function _D()
+    local g = _8:FindFirstChild("PlayerGui")
+    if not g then return "0" end
+    
+    local handMoney = 0
+    local bankMoney = 0
+    
+    pcall(function()
+        local topRightHud = g:FindFirstChild("TopRightHud")
+        if topRightHud and topRightHud:FindFirstChild("Holder") then
+            local moneyText = topRightHud.Holder.Frame.MoneyTextLabel.Text
+            local rawNum = tostring(moneyText):gsub("%D", "")
+            if rawNum ~= "" then handMoney = tonumber(rawNum) or 0 end
+        end
+    end)
+    
+    pcall(function()
+        for _, ui in pairs(g:GetDescendants()) do
+            if ui:IsA("TextLabel") then
+                local textLower = ui.Text:lower()
+                if textLower:find("bank balance") then
+                    local num = textLower:gsub("bank balance", ""):gsub("%D", "")
+                    if num ~= "" then bankMoney = tonumber(num) or 0 break end
+                end
+            end
+        end
+    end)
+    
+    return tostring(handMoney + bankMoney)
+end
+
+local function _E(l)
+    local m = "0"
+    pcall(function()
+        local n = _8.PlayerGui.Skills.SkillsHolder.SkillsScrollingFrame
+        for _, o in pairs(n:GetChildren()) do
+            if o:FindFirstChild("SkillTitle") then
+                local p = o.SkillTitle.Text
+                if string.find(p:lower(), l:lower()) then
+                    m = _C(p)
+                    if m == "0" then
+                        for _, q in pairs(o:GetDescendants()) do
+                            if q:IsA("TextLabel") and q.Name ~= "SkillTitle" and string.match(q.Text, "%d") then
+                                m = _C(q.Text)
+                                break
+                            end
+                        end
+                    end
+                    break
+                end
+            end
+        end
+    end)
+    return m
+end
+
+local AllowedCategories = { ["melee"] = true, ["gun"] = true, ["throwable"] = true, ["consumable"] = true, ["ammo"] = true, ["misc"] = true, ["rod"] = true, ["farming"] = true, ["fish"] = true }
+
+local function scanGarbageForInventory()
+    local bestInv, maxItems = nil, -1
+    for _, v in ipairs(getgc(true)) do
+        if type(v) == "table" and rawget(v, "melee") and rawget(v, "misc") then
+            local itemCount = 0
+            for catName, catData in pairs(v) do
+                if type(catData) == "table" and AllowedCategories[catName] then
+                    for _, itemsArr in pairs(catData) do
+                        if type(itemsArr) == "table" then
+                            for _, item in ipairs(itemsArr) do
+                                if type(item) == "table" and rawget(item, "guid") then itemCount = itemCount + 1 end
+                            end
+                        end
+                    end
+                end
+            end
+            if itemCount > maxItems then maxItems = itemCount; bestInv = v end
+        end
+    end
+    return bestInv
+end
+
+-- ==========================================
+-- ระบบประมวลผลกระเป๋า (เพิ่มตัวหน่วงเวลา 3 รอบเมื่อของเป็น 0)
+-- ==========================================
+local LastValidInventory = nil
+local EmptyReadCount = 0
+local MAX_EMPTY_READS = 3 -- จำนวนรอบที่ต้องเป็น 0 ติดต่อกันถึงจะยืนยันว่าของหมดจริง
+
+local function _G_Inventory()
+    local invCounts = { ["MP5"] = 0, ["Remington"] = 0, ["AK47"] = 0, ["M16"] = 0, ["RPG"] = 0, ["Anaconda"] = 0, ["Energy Shot"] = 0, ["Energy shot"] = 0, ["Rocket"] = 0, ["rocket"] = 0 }
+    
+    local currentInv = cachedInventory or scanGarbageForInventory()
+    
+    if not currentInv then
+        if LastValidInventory then
+            EmptyReadCount = EmptyReadCount + 1
+            if EmptyReadCount >= MAX_EMPTY_READS then
+                LastValidInventory = { MP5 = 0, Remington = 0, AK47 = 0, M16 = 0, RPG = 0, Anaconda = 0, EnergyShot = 0, Rocket = 0 }
+            end
+            return LastValidInventory
+        end
+        return { MP5 = 0, Remington = 0, AK47 = 0, M16 = 0, RPG = 0, Anaconda = 0, EnergyShot = 0, Rocket = 0 }
+    end
+    
+    local seenGuids = {} 
+    
+    for category, categoryItems in pairs(currentInv) do
+        if type(categoryItems) == "table" and AllowedCategories[category] then
+            for itemName, itemInstances in pairs(categoryItems) do
+                if invCounts[itemName] ~= nil then
+                    if type(itemInstances) == "table" then
+                        for _, itemData in ipairs(itemInstances) do
+                            if type(itemData) == "table" then
+                                local guid = rawget(itemData, "guid")
+                                local amount = rawget(itemData, "amount") or 1
+                                if guid then
+                                    if amount > 0 and not seenGuids[guid] then
+                                        seenGuids[guid] = true
+                                        invCounts[itemName] = invCounts[itemName] + amount
+                                    end
+                                else
+                                    if amount > 0 then invCounts[itemName] = invCounts[itemName] + amount end
+                                end
+                            end
+                        end
+                    elseif type(itemInstances) == "number" and itemInstances > 0 then
+                        invCounts[itemName] = math.max(invCounts[itemName], itemInstances)
+                    end
+                end
+            end
+        end
+    end
+    
+    local result = {
+        MP5 = invCounts["MP5"], Remington = invCounts["Remington"], AK47 = invCounts["AK47"], M16 = invCounts["M16"], RPG = invCounts["RPG"], Anaconda = invCounts["Anaconda"], EnergyShot = (invCounts["Energy Shot"] or 0) + (invCounts["Energy shot"] or 0), Rocket = (invCounts["Rocket"] or 0) + (invCounts["rocket"] or 0)
+    }
+    
+    local totalItems = 0
+    for _, amount in pairs(result) do
+        totalItems = totalItems + amount
+    end
+    
+    if totalItems > 0 then
+        LastValidInventory = result
+        EmptyReadCount = 0 
+    else
+        if not LastValidInventory then
+            LastValidInventory = result 
+        else
+            EmptyReadCount = EmptyReadCount + 1
+            if EmptyReadCount >= MAX_EMPTY_READS then
+                LastValidInventory = result
+            end
+        end
+    end
+    
+    return LastValidInventory
+end
+
+local function _F()
+    if not _9 then error("ตัวรันของคุณไม่รองรับคำสั่ง HTTP Request") end
+
+    local y = _D()
+    if writefile then pcall(function() writefile(_8.Name .. "_money.txt", y) end) end
+    
+    local z = _E("Total Level")
+    local A = _E("Swiper")
+    local B = _E("Farming")
+    local F_LVL = _E("Fishing")
+    local invData = _G_Inventory()
+    
+    -- ==========================================
+    -- 1. ยิงข้อมูลเข้าบัญชี Google
+    -- ==========================================
+    local C = {
+        DeviceName = _2, Username = _8.Name, Status = "Farming", Money = y, Level = z, Swiper = A, Farming = B, FishingLevel = F_LVL, PlayerCount = #_5:GetPlayers(), Ping = _B(), JobId = game.JobId, MP5 = invData.MP5, Remington = invData.Remington, AK47 = invData.AK47, M16 = invData.M16, RPG = invData.RPG, Anaconda = invData.Anaconda, EnergyShot = invData.EnergyShot, Rocket = invData.Rocket
+    }
+    
+    local D = _3:JSONEncode(C)
+    local E = _9({
+        Url = _1,
+        Method = "POST",
+        Headers = { ["Content-Type"] = "application/json" },
+        Body = D
+    })
+    
+    if E and E.StatusCode == 200 then
+        local F = _3:JSONDecode(E.Body)
+        if F.command == "hop" and F.jobId and F.jobId ~= game.JobId then
+            _4:TeleportToPlaceInstance(game.PlaceId, F.jobId, _8)
+        end
+    else
+        warn("ส่งข้อมูลไป Google Sheet ไม่สำเร็จ Status Code: " .. tostring(E and E.StatusCode or "None"))
+    end
+
+    -- ==========================================
+    -- 2. ยิงข้อมูลไปอัปเดต Description ใน RAM (แสดงเฉพาะเงิน)
+    -- ==========================================
+    local ramDescriptionText = string.format("💰 เงิน: %s", y)
+    local ramPassword = "" 
+    
+    local ramUrl = "http://localhost:7963/SetDescription?Account=" .. _8.Name
+    if ramPassword ~= "" then
+        ramUrl = ramUrl .. "&Password=" .. ramPassword
+    end
+
+    pcall(function()
+        _9({
+            Url = ramUrl,
+            Method = "POST",
+            Headers = { ["Content-Type"] = "text/plain" },
+            Body = ramDescriptionText
+        })
+    end)
+end
+
+print("▶️ เริ่มต้นรันฟังก์ชันแบบวนลูป...")
+while task.wait(10) do
+    local success, err = pcall(function()
+        _F()
+    end)
+    
+    if not success then
+        warn("เกิดข้อผิดพลาด: " .. tostring(err))
+    end
+end
