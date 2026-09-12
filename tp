@@ -1,0 +1,808 @@
+-- STREAMING_CHUNK:Initializing Services and Environment Bypass...
+for _, obj in pairs(workspace:GetDescendants()) do
+    if obj:IsA("Model") and obj.Name == "DoorSystem" then
+        obj:Destroy()
+    end
+end
+
+if not game:IsLoaded() then
+    repeat task.wait() until game:IsLoaded()
+end
+
+if not (game.PlaceId == 104715542330896 or game.PlaceId == 97556409405464) then
+    return
+end
+
+-- STREAMING_CHUNK:Configuring Vehicle Protection System...
+local VehiclesFolder = workspace:WaitForChild("Vehicles")
+local protectedVehicles = {}
+
+local function updateVehicleList()
+    protectedVehicles = {}
+    for _, model in ipairs(VehiclesFolder:GetDescendants()) do
+        if model:IsA("VehicleSeat") and model.Name == "DriverSeat" then
+            local vehicle = model:FindFirstAncestorOfClass("Model")
+            if vehicle then
+                protectedVehicles[vehicle] = true
+            end
+        end
+    end
+end
+updateVehicleList()
+
+local function isProtectedSeat(seat)
+    local vehicle = seat:FindFirstAncestorOfClass("Model")
+    return vehicle and protectedVehicles[vehicle] == true
+end
+
+local function removeSeatIfNotInProtectedVehicle(seat)
+    if isProtectedSeat(seat) then return end
+    seat:Destroy()
+end
+
+for _, seat in ipairs(workspace:GetDescendants()) do
+    if seat:IsA("Seat") or seat:IsA("VehicleSeat") then
+        if not isProtectedSeat(seat) then removeSeatIfNotInProtectedVehicle(seat) end
+    end
+end
+
+VehiclesFolder.DescendantAdded:Connect(function(obj)
+    if obj:IsA("VehicleSeat") and obj.Name == "DriverSeat" then updateVehicleList() end
+end)
+
+workspace.DescendantAdded:Connect(function(obj)
+    if obj:IsA("Seat") or obj:IsA("VehicleSeat") then
+        if not isProtectedSeat(obj) then removeSeatIfNotInProtectedVehicle(obj) end
+    end
+end)
+
+if getgenv then getgenv().identifyexecutor = nil end
+if getfenv then
+    local env = getfenv()
+    env.identifyexecutor = nil
+end
+
+local v_u_1 = {}
+local v2 = game.ReplicatedStorage:WaitForChild("Remotes")
+local v_u_3 = {
+	["send"] = v2:WaitForChild("Send"),
+	["get"] = v2:WaitForChild("Get")
+}
+
+function v_u_1.loaded()
+    function v_u_3.get.OnClientInvoke(p30)
+        if p30 == "connect" then
+            return true
+        end
+    end
+end
+print("bypassed")
+
+-- STREAMING_CHUNK:Defining Main Logic Variables and Configurations...
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local HttpService = game:GetService("HttpService")
+local UserInputService = game:GetService("UserInputService")
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local PathfindingService = game:GetService('PathfindingService')
+local Workspace = game:GetService("Workspace")
+local Client = Players.LocalPlayer
+local Character = Client.Character or Client.CharacterAdded:Wait()
+local UserId = Client.UserId
+local PlayerGui = Client:WaitForChild("PlayerGui")
+local Humanoid = Character:WaitForChild("Humanoid")
+local RootPart = Character:WaitForChild("HumanoidRootPart")
+local Net = require(ReplicatedStorage.Modules.Core.Net)
+
+Client.CharacterAdded:Connect(function(newCharacter)
+    Character = newCharacter
+    Humanoid = Character:WaitForChild("Humanoid")
+    RootPart = Character:WaitForChild("HumanoidRootPart")
+end)
+
+local Config = {
+    VechineType = "car",
+    InstantTeleportSpeed = 35,
+    InstantVechineSpeed = 52,
+    StopWalking = false,
+    Running = false,
+    PathfindingModifierCreater = false,
+    IsNavigating = false
+}
+local function c() return Config end
+local Sf = {}
+
+local function distTo(v3)
+    if not RootPart then return math.huge end
+    return (v3 - RootPart.Position).Magnitude
+end
+
+local function GetAllATM()
+    local all = {}
+    local ATMsFolder = workspace:FindFirstChild("Map") and workspace.Map:FindFirstChild("Props") and workspace.Map.Props:FindFirstChild("ATMs")
+    if ATMsFolder then
+        for _, atm in pairs(ATMsFolder:GetChildren()) do
+            if atm.Name == "ATM" and atm:IsA("Model") then table.insert(all, atm) end
+        end
+    end
+    return all
+end
+
+local function GetDepositATMPos()
+    local shortestDist, atmPos = math.huge, nil
+    for _, atm in ipairs(GetAllATM()) do
+        local pos = atm.PrimaryPart and atm.PrimaryPart.Position
+        if not pos then
+            for _, part in ipairs(atm:GetDescendants()) do
+                if part:IsA("BasePart") then pos = part.Position break end
+            end
+        end
+        if pos then
+            local d = distTo(pos)
+            if d < shortestDist then shortestDist = d; atmPos = pos end
+        end
+    end
+    return atmPos
+end
+
+-- STREAMING_CHUNK:Global Anti-Cheat UI Detection System...
+local lastWarningCheck = tick()
+local function CheckAntiCheatUI()
+    if tick() - lastWarningCheck < 0.5 then return false end
+    lastWarningCheck = tick()
+    
+    local hasWarning = false
+    for _, v in pairs(PlayerGui:GetDescendants()) do
+        if v:IsA("TextLabel") and v.Text and v.Visible then
+            local txt = string.lower(v.Text)
+            if string.find(txt, "teleport detected") or string.find(txt, "flying detected") or string.find(txt, "เทเลพอร์ต") or string.find(txt, "การบิน") then
+                hasWarning = true
+                v.Visible = false
+            end
+        end
+    end
+    return hasWarning
+end
+
+-- STREAMING_CHUNK:Creating Pathfinding Modifiers...
+do
+    if not c().PathfindingModifierCreater then
+        for _, v in pairs(workspace:GetDescendants()) do
+            if v.Name == "DoorSystem" or v.Name == "BasementDoor" then
+                for _, x in ipairs(v:GetDescendants()) do
+                    if x:IsA('BasePart') then
+                        x.CanCollide = false
+                        if not x:FindFirstChildOfClass("PathfindingModifier") then
+                            local modifier = Instance.new("PathfindingModifier")
+                            modifier.Label = "DoorArea"
+                            modifier.PassThrough = true
+                            modifier.Parent = x
+                        end
+                    end
+                end
+            end
+            if v.Name == "VehicleBlockers" then v:Destroy() end
+        end
+        c().PathfindingModifierCreater = true
+    end
+end
+
+function Sf:GetInfo(w)
+    local amount = 0
+    local IsHaving = false
+    local Uid = nil
+    local Using = false
+    local Drowning = false
+    local Items = PlayerGui:FindFirstChild("Items")
+    if Items then
+        local Holding = Items:FindFirstChild('ItemsHolder') and Items.ItemsHolder:FindFirstChild("ItemsScrollingFrame")
+        if Holding then
+            for _, v in pairs(Holding:GetChildren()) do
+                if v.Name ~= 'Folder' and v.Name ~= 'UIGridLayout' and v.Name ~= "ItemTemplate" then
+                    local itemName = v:FindFirstChild("ItemName")
+                    if itemName and itemName.Text == w then
+                        Uid = v.Name
+                        amount = amount + 1
+                        IsHaving = true
+                        Using = v:FindFirstChild('ItemEquipped') and v.ItemEquipped.Visible
+                        Drowning = v:FindFirstChild('DestroyedItemIcon') and v.DestroyedItemIcon.Visible
+                    end
+                end
+            end
+        end
+    end
+    return amount, IsHaving, Uid, Using, Drowning
+end
+
+local function isIndoors(pos)
+    local params = RaycastParams.new()
+    local ignoreList = workspace:FindFirstChild("Vehicles") and workspace.Vehicles:GetChildren() or {}
+    for _, p in pairs(Players:GetPlayers()) do
+        if p.Character then table.insert(ignoreList, p.Character) end
+    end
+    params.FilterDescendantsInstances = ignoreList
+    params.FilterType = Enum.RaycastFilterType.Exclude
+    
+    local hit = workspace:Raycast(pos, Vector3.new(0, 50, 0), params)
+    return hit ~= nil
+end
+
+function Sf:ForceStop()
+    Config.IsNavigating = false
+    Config.StopWalking = true
+    task.wait(0.1)
+    Config.StopWalking = false
+    Config.Running = false
+end
+
+function Sf:Ac(...) return Net.send(...) end
+
+-- STREAMING_CHUNK:Vehicle Mount Logic and Smooth Teleportation...
+local function ForceMountVehicle(vehicle)
+    if not vehicle or not vehicle.PrimaryPart then return false end
+    local attempts = 0
+    
+    while not Humanoid.Sit and attempts < 10 and Config.IsNavigating do
+        attempts = attempts + 1
+        local charLook = RootPart.CFrame.LookVector
+        local spawnPos = RootPart.Position - (charLook * 4) + Vector3.new(0, 3, 0)
+        local vehicleRotation = CFrame.new(spawnPos) * CFrame.Angles(0, math.atan2(charLook.X, charLook.Z), 0)
+        
+        for _, part in ipairs(vehicle:GetDescendants()) do
+            if part:IsA("BasePart") then
+                part.AssemblyLinearVelocity = Vector3.zero
+                part.AssemblyAngularVelocity = Vector3.zero
+            end
+        end
+        
+        vehicle:PivotTo(vehicleRotation)
+        task.wait(0.1)
+        
+        for _, prompt in pairs(vehicle:GetDescendants()) do
+            if prompt:IsA('ProximityPrompt') then
+                fireproximityprompt(prompt)
+            end
+        end
+        
+        local w = 0
+        while not Humanoid.Sit and w < 10 and Config.IsNavigating do
+            task.wait(0.1)
+            w = w + 1
+        end
+    end
+    return Humanoid.Sit
+end
+
+local function ForceUnmountVehicle()
+    if not Humanoid or not RootPart then return end
+    Net.get("exit_seat")
+    Humanoid.Sit = false
+    
+    local waitExit = 0
+    while Humanoid.Sit and waitExit < 15 and Config.IsNavigating do
+        task.wait(0.1)
+        waitExit = waitExit + 1
+        Humanoid.Sit = false
+    end
+    
+    if RootPart then
+        local rightVector = RootPart.CFrame.RightVector
+        local jumpOffPos = RootPart.Position + (rightVector * 6) + Vector3.new(0, 2, 0)
+        RootPart:PivotTo(CFrame.new(jumpOffPos))
+        RootPart.AssemblyLinearVelocity = Vector3.zero
+        RootPart.AssemblyAngularVelocity = Vector3.zero
+    end
+    task.wait(0.3)
+end
+
+-- ====================================================
+-- 🏃‍♂️ ระบบการเคลื่อนที่ด้วยคน
+-- ====================================================
+local hoverHeight = 3
+local maxClimbHeight = 4
+local lookAheadDistance = 3
+
+local function calculateHoverY(myCharacter, currentRootPos, directionUnit)
+    local rayParams = RaycastParams.new()
+    rayParams.FilterDescendantsInstances = {myCharacter}
+    rayParams.FilterType = Enum.RaycastFilterType.Exclude
+
+    local forwardRay = Workspace:Raycast(currentRootPos, directionUnit * lookAheadDistance, rayParams)
+    local checkAheadPos = currentRootPos + (directionUnit * lookAheadDistance)
+    if forwardRay then checkAheadPos = forwardRay.Position + (directionUnit * 0.1) end
+
+    local rayOrigin = Vector3.new(checkAheadPos.X, currentRootPos.Y + maxClimbHeight, checkAheadPos.Z)
+    
+    -- แก้ไขระยะ Raycast ให้ยิงลึกลงไป 5000 Studs เพื่อให้หาพื้นเจอเสมอเวลาลงจากที่สูง
+    local rayDirection = Vector3.new(0, -5000, 0) 
+    
+    local rayResult = Workspace:Raycast(rayOrigin, rayDirection, rayParams)
+    
+    local targetY = currentRootPos.Y
+    if rayResult then targetY = rayResult.Position.Y + hoverHeight end
+    
+    return targetY
+end
+
+function Sf:Teleport(destination, stopIfOutdoors)
+    c().StopWalking = false
+    c()['Running'] = true
+    local char = Client.Character or Client.CharacterAdded:Wait()
+    local RootPart = char:WaitForChild("HumanoidRootPart")
+    local Humanoid = char:WaitForChild("Humanoid")
+    
+    local path = PathfindingService:CreatePath({
+        AgentCanJump = true, AgentRadius = 2.8, AgentHeight = 5.0, WaypointSpacing = 3,
+        Costs = { BlockedNode = 50, DoorArea = 1 }
+    })
+    
+    local success = pcall(function() path:ComputeAsync(RootPart.Position, destination) end)
+    if not success or path.Status ~= Enum.PathStatus.Success then c()['Running'] = false return end
+    
+    local waypoints = path:GetWaypoints()
+    table.insert(waypoints, PathWaypoint.new(destination, Enum.PathWaypointAction.Walk))
+    
+    local currentBaseY = RootPart.Position.Y
+    for _, wp in pairs(waypoints) do
+        local targetPos = wp.Position
+        
+        while not c().StopWalking and Config.IsNavigating do
+            local dt = RunService.Heartbeat:Wait()
+            c()['Running'] = true
+            
+            if not Config.IsNavigating or Humanoid.Health <= 0 then break end
+            
+            if stopIfOutdoors and not isIndoors(RootPart.Position) then
+                c()['Running'] = false
+                return true
+            end
+            
+            if CheckAntiCheatUI() then
+                print("⚠️ ตรวจพบ Anti-Cheat ขณะเดินเท้า -> ยกเลิกและคำนวณใหม่")
+                c()['Running'] = false
+                return "Restart"
+            end
+            
+            if Humanoid.Sit then ForceUnmountVehicle() end
+            
+            local currentPos = RootPart.Position
+            local dist2D = (Vector3.new(targetPos.X, 0, targetPos.Z) - Vector3.new(currentPos.X, 0, currentPos.Z)).Magnitude
+            
+            if dist2D <= 3.5 then break end
+            
+            local direction = (Vector3.new(targetPos.X, currentBaseY, targetPos.Z) - Vector3.new(currentPos.X, currentBaseY, currentPos.Z))
+            
+            if direction.Magnitude > 0.01 then
+                local moveStep = math.min(Config.InstantTeleportSpeed * dt, direction.Magnitude)
+                currentBaseY = calculateHoverY(char, currentPos, direction.Unit)
+                
+                local newPos = Vector3.new(currentPos.X + (direction.Unit * moveStep).X, currentBaseY, currentPos.Z + (direction.Unit * moveStep).Z)
+                RootPart.CFrame = CFrame.lookAt(newPos, newPos + direction.Unit)
+                
+                RootPart.AssemblyLinearVelocity = Vector3.zero
+                RootPart.AssemblyAngularVelocity = Vector3.zero
+            end
+            Sf:Ac("set_sprinting_1", true)
+        end
+        if not Config.IsNavigating or c().StopWalking then break end
+    end
+    c()['Running'] = false
+end
+
+-- STREAMING_CHUNK:Refined Vehicle Navigation Logic (Stable Drive)...
+function Sf:Drive(model, destination, stopCarDist)
+    stopCarDist = stopCarDist or 0
+    if not model or not model.PrimaryPart then c()['Running'] = false return false end
+    c()["StopWalking"] = false
+    
+    local isCar = c().VechineType == "car"
+    local path = PathfindingService:CreatePath({
+        AgentRadius = isCar and 5.5 or 2,
+        AgentHeight = isCar and 6 or 5,
+        AgentCanJump = true, WaypointSpacing = 8,
+        Costs = { BlockedNode = 100, Cars = 1, Water = math.huge, DoorArea = 1 }
+    })
+    
+    local success = pcall(function() path:ComputeAsync(model.PrimaryPart.Position, destination) end)
+    
+    if not success or path.Status ~= Enum.PathStatus.Success then
+          c()['Running'] = false
+          if Humanoid.Sit then ForceUnmountVehicle() end
+        return false 
+    end
+    
+    local waypoints = path:GetWaypoints()
+    table.insert(waypoints, PathWaypoint.new(destination, Enum.PathWaypointAction.Walk))
+    
+    for i, wp in pairs(waypoints) do
+        if not model or not model.PrimaryPart then c()['Running'] = false return false end
+        local startPos = model:GetPivot().Position
+        local heightOffset = (wp.Action == Enum.PathWaypointAction.Jump) and 8 or (isCar and 3.5 or 2)
+        local goalPos = wp.Position + Vector3.new(0, heightOffset, 0)
+        local dir = (goalPos - startPos).Unit
+        local dist = (goalPos - startPos).Magnitude
+        local movedDist = 0
+        local speed = Config.InstantVechineSpeed or 52
+        
+        while movedDist < dist and Config.IsNavigating and not c().StopWalking do
+            local dt = RunService.Heartbeat:Wait()
+            if not model or not model.PrimaryPart then c()['Running'] = false return false end
+            c()['Running'] = true
+            if not Config.IsNavigating then c()['Running'] = false return false end
+            
+            if stopCarDist > 0 and (model:GetPivot().Position - destination).Magnitude <= stopCarDist then
+                c()['Running'] = false
+                return true
+            end
+            
+            if CheckAntiCheatUI() then
+                print("⚠️ ตรวจพบ Anti-Cheat ขณะขับรถ -> กดยกเลิกการทำงานและเริ่มเดินทางใหม่ (Restart)")
+                if Humanoid and Humanoid.Sit then ForceUnmountVehicle() end
+                c()['Running'] = false
+                return "Restart"
+            end
+            
+            if not Humanoid.Sit then 
+                ForceMountVehicle(model)
+                if not Humanoid.Sit then
+                    c()['Running'] = false 
+                    return false 
+                end
+            end
+            
+            movedDist = math.min(movedDist + (dt * speed), dist)
+            local newPos = startPos + dir * movedDist
+            
+            local flatDir = Vector3.new(dir.X, 0, dir.Z)
+            if flatDir.Magnitude > 0.001 then
+                flatDir = flatDir.Unit
+            else
+                local lookV = model:GetPivot().LookVector 
+                flatDir = Vector3.new(lookV.X, 0, lookV.Z)
+                if flatDir.Magnitude > 0.001 then
+                    flatDir = flatDir.Unit
+                else
+                    flatDir = Vector3.new(1, 0, 0)
+                end
+            end
+            
+            local lookAtPos = newPos + flatDir
+            model:PivotTo(CFrame.lookAt(newPos, lookAtPos))
+            
+            for _, part in ipairs(model:GetDescendants()) do
+                if part:IsA("BasePart") then
+                    part.AssemblyLinearVelocity = Vector3.zero
+                    part.AssemblyAngularVelocity = Vector3.zero
+                end
+            end
+        end
+        c()['Running'] = false
+        if not Config.IsNavigating then return false end
+    end
+    c()['Running'] = false
+    return true
+end
+
+-- STREAMING_CHUNK:Building Navigation UI...
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "NavigationGui"
+screenGui.ResetOnSpawn = false
+screenGui.Parent = Client:WaitForChild("PlayerGui")
+
+local topFrame = Instance.new("Frame")
+topFrame.Name = "TopFrame"
+topFrame.Size = UDim2.new(1, 0, 0, 40)
+topFrame.Position = UDim2.new(0.5, 0, 0, 10)
+topFrame.AnchorPoint = Vector2.new(0.5, 0)
+topFrame.BackgroundTransparency = 1
+topFrame.Visible = true 
+topFrame.Parent = screenGui
+
+local listLayout = Instance.new("UIListLayout")
+listLayout.Parent = topFrame
+listLayout.FillDirection = Enum.FillDirection.Horizontal
+listLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+listLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+listLayout.Padding = UDim.new(0, 6)
+listLayout.SortOrder = Enum.SortOrder.LayoutOrder
+
+local function createButton(name, text, color, width)
+    local btn = Instance.new("TextButton")
+    btn.Name = name
+    btn.Text = text
+    btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    btn.BackgroundColor3 = color
+    btn.Font = Enum.Font.SourceSansBold
+    btn.TextSize = 13 
+    btn.Size = UDim2.new(0, width, 0, 30) 
+    btn.Parent = topFrame
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 6)
+    return btn
+end
+
+local btnGunShop = createButton("BtnGunShop", "🔫 ร้านปืน", Color3.fromRGB(200, 100, 0), 80)
+btnGunShop.LayoutOrder = 1
+local btnPawnShop = createButton("BtnPawnShop", "💎 ร้านจำนำ", Color3.fromRGB(0, 150, 200), 85)
+btnPawnShop.LayoutOrder = 2
+local btnPotionShop = createButton("BtnPotionShop", "🧪 ร้านน้ำยา", Color3.fromRGB(50, 200, 50), 85)
+btnPotionShop.LayoutOrder = 3
+local btnBikeShop = createButton("BtnBikeShop", "🚲 ร้านจักรยาน", Color3.fromRGB(100, 150, 250), 95)
+btnBikeShop.LayoutOrder = 4
+local btnHardwareShop = createButton("BtnHardwareShop", "🛠️ ร้านอุปกรณ์", Color3.fromRGB(150, 100, 50), 95)
+btnHardwareShop.LayoutOrder = 5 
+local btnATM = createButton("BtnATM", "💳 ตู้ ATM", Color3.fromRGB(220, 170, 0), 80)
+btnATM.LayoutOrder = 6
+local btnSafe = createButton("BtnSafe", "🔒 ตู้เซฟ", Color3.fromRGB(120, 120, 120), 80)
+btnSafe.LayoutOrder = 7 
+local btnStop = createButton("BtnStop", "⏹️ หยุด [R]", Color3.fromRGB(150, 150, 150), 80)
+btnStop.LayoutOrder = 8
+
+-- STREAMING_CHUNK:Configuring Coordinates and Waypoints...
+local shops = {
+    PawnShop = { P1 = Vector3.new(1176, 255, -554), P2 = Vector3.new(1176, 256, -574) },
+    GunShop = { P1 = Vector3.new(-180, 255, -215), P2 = Vector3.new(-205, 256, -236) },
+    BikeShop = { P1 = Vector3.new(254, 255, -232), P2 = Vector3.new(244,255,-270) },
+    PotionShop = { P1 = Vector3.new(759, 255, -289) },
+    HardwareShop = { P1 = Vector3.new(-139, 255, 154) }
+}
+
+local function FindVehicleForNav()
+    local ScrollingFrame = PlayerGui:FindFirstChild("Items") and PlayerGui.Items:FindFirstChild("ItemsHolder") and PlayerGui.Items.ItemsHolder:FindFirstChild("ItemsScrollingFrame")
+    if not ScrollingFrame then return nil, nil end
+    
+    for _, v in ipairs(ScrollingFrame:GetChildren()) do
+        if v:GetAttribute("ItemType") == "bike" then
+            return (v.ItemName.Text == "BMX" and "BMX" or v.ItemName.Text), "bike"
+        end
+    end
+    for _, v in ipairs(ScrollingFrame:GetChildren()) do
+        if v:GetAttribute('ItemType') == "car" then return v.ItemName.Text, "car" end
+    end
+    return nil, nil
+end
+
+-- STREAMING_CHUNK:Handling Main Navigation Processing...
+local currentNavID = 0
+local function StartNavTo(shopData, targetName)
+    Sf:ForceStop()
+    task.wait(0.1) 
+    currentNavID = currentNavID + 1
+    local myNavID = currentNavID
+    
+    Config.IsNavigating = true
+    btnStop.BackgroundColor3 = Color3.fromRGB(220, 20, 60)
+    btnStop.Text = "⏹️ กำลังไป " .. (targetName or "เป้าหมาย") .. " [R]"
+    
+    task.spawn(function()
+        local char = Client.Character
+        local root = char and char:FindFirstChild("HumanoidRootPart")
+        
+        local myVehicle = nil
+        for _, vehicle in ipairs(workspace.Vehicles:GetChildren()) do
+            if vehicle:GetAttribute('OwnerUserId') == UserId then
+                myVehicle = vehicle
+                break
+            end
+        end
+        
+        local vehicleName, vehicleType = FindVehicleForNav()
+        if vehicleType then Config.VechineType = vehicleType end
+        
+        if not myVehicle and vehicleName then
+            local amount, isHaving, uid, using, drowning = Sf:GetInfo(vehicleName)
+            if isHaving and not using and not drowning then
+                Net.get("toggle_equip_item", tostring(uid))
+                task.wait(0.5)
+            end
+            
+            local wc = 0
+            repeat
+                task.wait(0.2)
+                wc = wc + 1
+                for _, v in ipairs(workspace.Vehicles:GetChildren()) do
+                    if v:GetAttribute('OwnerUserId') == UserId then
+                        myVehicle = v
+                        break
+                    end
+                end
+            until myVehicle or wc > 15
+        end
+        
+        if myVehicle and not vehicleType then
+            local mName = string.lower(myVehicle.Name)
+            if mName:match("bmx") or mName:match("bike") or mName:match("motor") or mName:match("scooter") then
+                Config.VechineType = "bike"
+            else
+                Config.VechineType = "car"
+            end
+        end
+        
+        if myNavID ~= currentNavID or not Config.IsNavigating then return end
+        
+        if root and isIndoors(root.Position) then
+            print("📍 คุณอยู่ในบ้าน/ในร่ม กำลังเดินออกไปข้างนอกก่อนเรียกรถ...")
+            if Humanoid.Sit then ForceUnmountVehicle() end
+            
+            local nearestExit = nil
+            local minDist = 150
+            for _, v in pairs(workspace:GetDescendants()) do
+                if v:IsA("BasePart") and (v.Name:lower():match("door") or v.Name == "TouchPart") then
+                    if v.Parent and v.Parent.Name == "SafeBeacon" then continue end
+                    if not v:IsDescendantOf(char) then
+                        local d = (v.Position - root.Position).Magnitude
+                        if d < minDist then
+                            minDist = d
+                            nearestExit = v.Position
+                        end
+                    end
+                end
+            end
+            
+            if nearestExit then
+                if Sf:Teleport(nearestExit, true) == "Restart" then
+                    StartNavTo(shopData, targetName)
+                    return
+                end
+            else
+                if Sf:Teleport(shopData.P1, true) == "Restart" then
+                    StartNavTo(shopData, targetName)
+                    return
+                end
+            end
+            task.wait(0.5)
+        end
+        
+        if root then
+            for shopName, data in pairs(shops) do
+                if data.P1 then
+                    local dist = (Vector3.new(root.Position.X, 0, root.Position.Z) - Vector3.new(data.P1.X, 0, data.P1.Z)).Magnitude
+                    if dist <= 25 and shopData.P1 ~= data.P1 then
+                        if Humanoid.Sit then ForceUnmountVehicle() end
+                        if Sf:Teleport(data.P1) == "Restart" then
+                            StartNavTo(shopData, targetName)
+                            return
+                        end
+                        task.wait(0.2)
+                        break
+                    end
+                end
+            end
+        end
+        
+        if myNavID ~= currentNavID or not Config.IsNavigating then return end
+        
+        if myVehicle and Config.IsNavigating then
+            Sf:Ac("lock_vehicle", myVehicle, true)
+            ForceMountVehicle(myVehicle)
+        end
+        
+        if myNavID ~= currentNavID or not Config.IsNavigating then return end
+        
+        if Config.IsNavigating then
+            if myVehicle and Humanoid.Sit then
+                local driveSuccess = Sf:Drive(myVehicle, shopData.P1, shopData.StopCarDist or 15)
+                
+                if myNavID ~= currentNavID or not Config.IsNavigating then return end
+                
+                if driveSuccess == "Restart" then
+                    print("🔄 ขับรถชน Anti-Cheat กำลังรันคำสั่งเดินทางใหม่อีกครั้ง...")
+                    StartNavTo(shopData, targetName)
+                    return
+                end
+                
+                if driveSuccess == false then
+                    if Sf:Teleport(shopData.P1) == "Restart" then
+                        StartNavTo(shopData, targetName)
+                        return
+                    end
+                end
+                
+                if Config.IsNavigating and shopData.P2 then
+                    print("📍 จอดรถแล้ว! กำลังเดินเท้าเข้าไป...")
+                    ForceUnmountVehicle()
+                    if myNavID ~= currentNavID or not Config.IsNavigating then return end
+                    
+                    if Sf:Teleport(shopData.P2) == "Restart" then
+                        StartNavTo(shopData, targetName)
+                        return
+                    end
+                end
+            else
+                if Sf:Teleport(shopData.P1) == "Restart" then
+                    StartNavTo(shopData, targetName)
+                    return
+                end
+                
+                if myNavID == currentNavID and Config.IsNavigating and shopData.P2 then
+                    if Sf:Teleport(shopData.P2) == "Restart" then
+                        StartNavTo(shopData, targetName)
+                        return
+                    end
+                end
+            end
+            
+            if myNavID == currentNavID and Config.IsNavigating then
+                print("📍 ถึง " .. (targetName or "เป้าหมาย") .. " แล้ว! (รอการยืนยันตำแหน่ง 2 วินาที)")
+                local finalDest = shopData.P2 or shopData.P1
+                local confirmTime = 0
+                
+                while confirmTime < 2 and myNavID == currentNavID and Config.IsNavigating do
+                    task.wait(0.2)
+                    confirmTime = confirmTime + 0.2
+                    if RootPart then
+                        local p1 = Vector3.new(RootPart.Position.X, 0, RootPart.Position.Z)
+                        local p2 = Vector3.new(finalDest.X, 0, finalDest.Z)
+                        
+                        if (p1 - p2).Magnitude > 8 then
+                            print("⚠️ ตรวจพบการดึงกลับ! กำลังวาร์ปซ่อมไปที่เป้าหมาย...")
+                            if Sf:Teleport(finalDest) == "Restart" then
+                                StartNavTo(shopData, targetName)
+                                return
+                            end
+                            confirmTime = 0 
+                        end
+                    end
+                end
+                
+                if myNavID == currentNavID and Config.IsNavigating then
+                    print("✅ ยืนยันตำแหน่งสำเร็จ!")
+                    Sf:ForceStop()
+                    btnStop.BackgroundColor3 = Color3.fromRGB(150, 150, 150)
+                    btnStop.Text = "⏹️ หยุด [R]"
+                end
+            end
+        end
+    end)
+end
+
+-- STREAMING_CHUNK:Binding Events and User Inputs...
+btnPawnShop.MouseButton1Click:Connect(function() StartNavTo(shops.PawnShop, "ร้านจำนำ") end)
+btnGunShop.MouseButton1Click:Connect(function() StartNavTo(shops.GunShop, "ร้านปืน") end)
+btnPotionShop.MouseButton1Click:Connect(function() StartNavTo(shops.PotionShop, "ร้านน้ำยา") end)
+btnBikeShop.MouseButton1Click:Connect(function() StartNavTo(shops.BikeShop, "ร้านจักรยาน") end)
+btnHardwareShop.MouseButton1Click:Connect(function() StartNavTo(shops.HardwareShop, "ร้านอุปกรณ์") end)
+btnATM.MouseButton1Click:Connect(function()
+    local atmPos = GetDepositATMPos()
+    if atmPos then
+        local adjustedPos = atmPos
+        if RootPart then
+            local p1 = Vector3.new(RootPart.Position.X, 0, RootPart.Position.Z)
+            local p2 = Vector3.new(atmPos.X, 0, atmPos.Z)
+            if (p1 - p2).Magnitude > 5 then
+                local dir = (p1 - p2).Unit
+                adjustedPos = Vector3.new(atmPos.X + (dir.X * 4), atmPos.Y, atmPos.Z + (dir.Z * 4))
+            end
+        end
+        StartNavTo({ P1 = adjustedPos }, "ตู้ ATM")
+    end
+end)
+btnSafe.MouseButton1Click:Connect(function()
+    local safePos = nil
+    local minDistance = math.huge
+    local searchArea = workspace:FindFirstChild("Map") and workspace.Map:FindFirstChild("Tiles") or workspace
+    for _, descendant in ipairs(searchArea:GetDescendants()) do
+        if descendant:IsA("BasePart") and descendant.Name == "TouchPart" and descendant.Parent and descendant.Parent.Name == "SafeBeacon" then
+            local dist = distTo(descendant.Position)
+            if dist < minDistance then
+                minDistance = dist
+                safePos = descendant.Position
+            end
+        end
+    end
+    if safePos then StartNavTo({ P1 = safePos, P2 = safePos, StopCarDist = 40 }, "ตู้เซฟ") end
+end)
+btnStop.MouseButton1Click:Connect(function()
+    Sf:ForceStop()
+    btnStop.BackgroundColor3 = Color3.fromRGB(150, 150, 150)
+    btnStop.Text = "⏹️ หยุด [R]"
+end)
+UserInputService.InputBegan:Connect(function(input, gp)
+    if gp then return end
+    if input.KeyCode == Enum.KeyCode.R then
+        Sf:ForceStop()
+        btnStop.BackgroundColor3 = Color3.fromRGB(150, 150, 150)
+        btnStop.Text = "⏹️ หยุด [R]"
+    elseif input.KeyCode == Enum.KeyCode.Y then
+        topFrame.Visible = not topFrame.Visible
+    end
+end)
