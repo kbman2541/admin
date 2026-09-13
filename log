@@ -1,7 +1,7 @@
 repeat task.wait() until game:IsLoaded()
 
 local _1 = "https://script.google.com/macros/s/AKfycbywTxWi8Suqt2qYlIlCkhPXZLWJfHP6RWN27p2cC2IjKl1rCq2hJhCEMpdAIMEbSDmUmg/exec"
-local _2 = "bot-send"
+local _2 = "bot-MAN"
 local _3 = game:GetService("HttpService")
 local _4 = game:GetService("TeleportService")
 local _5 = game:GetService("Players")
@@ -99,20 +99,26 @@ local AllowedCategories = { ["melee"] = true, ["gun"] = true, ["throwable"] = tr
 local function scanGarbageForInventory()
     local bestInv, maxItems = nil, -1
     for _, v in ipairs(getgc(true)) do
-        if type(v) == "table" and rawget(v, "melee") and rawget(v, "misc") then
+        -- แก้ไข: เปลี่ยนเงื่อนไขให้ยืดหยุ่นขึ้น แค่มีหมวดปืน ของใช้ ขยะ หรือหมวดใดหมวดหนึ่งก็ให้ดึงค่ามาเช็คเลย
+        if type(v) == "table" and (rawget(v, "gun") or rawget(v, "consumable") or rawget(v, "melee") or rawget(v, "misc") or rawget(v, "ammo")) then
             local itemCount = 0
             for catName, catData in pairs(v) do
                 if type(catData) == "table" and AllowedCategories[catName] then
                     for _, itemsArr in pairs(catData) do
                         if type(itemsArr) == "table" then
                             for _, item in ipairs(itemsArr) do
-                                if type(item) == "table" and rawget(item, "guid") then itemCount = itemCount + 1 end
+                                if type(item) == "table" and rawget(item, "guid") then 
+                                    itemCount = itemCount + 1 
+                                end
                             end
                         end
                     end
                 end
             end
-            if itemCount > maxItems then maxItems = itemCount; bestInv = v end
+            if itemCount > maxItems then 
+                maxItems = itemCount
+                bestInv = v 
+            end
         end
     end
     return bestInv
